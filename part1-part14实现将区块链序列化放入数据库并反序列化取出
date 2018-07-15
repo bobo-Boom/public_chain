@@ -1,0 +1,248 @@
+1、 思路：创建区块->创建创世区块->创建区块链->创建带有创始区块的区块链->在区块链上ADD区块，从而形成完整的区块链。
+2、在编程过程中需要完成的一些功能，首先想这个功能在应用中是否针对某个对象，从而决定将次功能实现为某个对象的方法或者函数。
+3、Hash是整个区块的信息的拼接，在拼接的时候需要将INT64-》为[]byte,这里用到了2种方法.
+4、在创建区块的时候，preveHash和当前Hash是无法确定的，需要进行挖矿，生成符合难度的Hash值，这里用到了工作量证明。
+5、生成的区块链要放在数据库中，这里用到了key-vale型数据库，bolt，下载此数据库要先下载git
+6、数据库的详细操作在gitthub上面有。
+7、利用一个hash对应一个区块的形式将区块链放到数据库中，所以将区块放到数据中需要进行序列化（将区块对象转换为[]byte）,
+   在从数据库中取出数据的时候需要进行发序列化。
+   
+  截止part14代码实现将单个区块或者多个区块放入数据存储和取出数据的功能，还没有实现将区块链放入数据库，遍历取出的功能，接下来回实现。
+  
+block.go
+
+//建立区块对象，想象它有哪些属性，从而建立对象，还有Noce，后期代码放入
+type  Block  struct{
+	//1.区块高度
+	Height int64
+	//2.上一个区块HASH
+	PrevBlockHash []byte
+	//3.交易数据
+	Date []byte
+	//4.时间戳
+	Timestamp  int64
+	//5.HASH
+	Hash  []byte
+}
+ 
+ //1.创建新的区块
+ //注意：这里直接利用返回值返回对象，从而实现创建对象并且分装的功能，这样很好用！
+func NewBlock(date string,height int64,prevBlockHash []byte )*Block{
+
+	block:=&Block{
+		Height:height,
+		PrevBlockHash:prevBlockHash,
+		Date:[]byte(date),
+		Timestamp:time.Now().Unix(),
+		Hash:nil,
+	}
+  
+ //2.单独写一个方法，生成创世区块
+ //这里同样利用了返回值
+func CreateGensisBlock(data string )*Block{
+
+	return  NewBlock(data,1,
+      []byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0})
+}
+
+
+后续更进：
+
+  func NewBlock(date string,height int64,prevBlockHash []byte )*Block{
+
+	block:=&Block{
+		Height:height,
+		PrevBlockHash:prevBlockHash,
+		Date:[]byte(date),
+		Timestamp:time.Now().Unix(),
+		Hash:nil,
+	}
+
+	//设置hash
+	block.SetHush()
+	return  block
+}
+  
+//当前区块的方法
+//设置hash值，把所有信息转换为[]byte,再进行拼接，这里用了俩种转换方式
+1、先转换为字符串  再类型转化为[]byte
+timeString:=strconv.FormatInt(block.Timestamp,2)
+timeByte:=[]byte(timeString)
+
+2、利用外部实现的一个函数直接转换，这个函数可以以后直接使用
+func IntToHex(num int64)[]byte{
+	buff:=new(bytes.Buffer)
+	err:=binary.Write(buff,binary.BigEndian,num)
+	if err!=nil{
+		log.Panic(err)
+	}
+	return buff.Bytes()
+
+}
+3.生成hash，将拼接的[]byte,生成hash
+	//Hash是个切片是动态的数组，而Sum256返回的是[32]byte
+	hash:=sha256.Sum256 (blockBytes)
+	block.Hash=hash[:]
+
+
+
+func (block *Block)SetHush(){
+	//1.Height(int64)转化为字节数组[]byte
+	heightBytes:=IntToHex(block.Height)
+	fmt.Println(heightBytes)
+
+
+	//2.将时间戳转化为字节数组[]byte
+	timeString:=strconv.FormatInt(block.Timestamp,2)
+	timeByte:=[]byte(timeString)
+	fmt.Println(timeByte)
+	//以上俩种转换方式
+	//3.拼接所有属性
+	blockBytes:=bytes.Join([][]byte{heightBytes,
+		block.PrevBlockHash,block.Date,timeByte,block.Hash},[]byte{}  )
+	//4.生成hash
+	//Hash是个切片是动态的数组，而Sum256返回的是[32]byte
+	hash:=sha256.Sum256 (blockBytes)
+	block.Hash=hash[:]
+
+}
+
+Blockchain.go
+思路：多个Block ->Blocks就组成了区块链，利用切片指针数组
+type Blockchain struct{
+	Blocks []*Block//存储有序区块
+}
+//1.创建带有创世区块的区块链
+依旧利用返回值！
+func CreateBlockchainWithGenesisBlock()*Blockchain{
+
+	 genesisBlock:=CreateGensisBlock("Genesis  Data....")
+	 return &Blockchain{[]*Block{genesisBlock}}
+}
+func (blc *Blockchain)AddBlockToBlockChain(data  string ,height int64,preHash []byte){
+
+	//创建新的区块
+	newBlock:=NewBlock(data,height,preHash)
+	//往链里添加区块
+	blc.Blocks=append(blc.Blocks,newBlock)
+
+}
+利用appen添加新的区块
+
+
+  
+ 
+ 
+ ProofOfWork.go
+ 
+  
+ 工作量证明：
+ 
+ 
+注意 big int 的使用 
+1、
+//1。创建一个初始值为1的target
+target := big.NewInt(1) //相当于 000000.。。。。1
+//2.左移256-targetBit
+target = target.Lsh(target, 256-targetBit)
+
+2、
+hashInt.SetBytes(hash[:])
+proofOfWork.target.Cmp(&hashInt)
+
+
+
+
+
+package BLC
+import (
+	"math/big"
+	"bytes"
+	"crypto/sha256"
+	"fmt"
+)
+
+/*工作量证明：假设一个区块被创建出来，它有了自己的hash值，但是这个hash值
+需要验证是否满足当前难度，从而确定这个区块是否有效，如果当前hash不符合要求，
+那就进行Run（）（挖矿），直到生成符合条件的hash值为止，此时区块被证明有效*/
+/*难度要在生成区块前就规定好--》全局变量*/
+/*hash值256位，32个字节，*/
+//256为hash里面 前面至少有16个零
+const targetBit = 24
+
+type ProofOfWork struct {
+	Block  *Block   //需要验证的区块（结构体）
+	target *big.Int //大数据存储,代表难度
+}
+
+//数据拼接，返回字节数组
+func (pow *ProofOfWork) prepareDate(nonce int) []byte {
+	data := bytes.Join(
+		[][]byte{
+			pow.Block.PrevBlockHash,
+			pow.Block.Date,
+			IntToHex(pow.Block.Timestamp),
+			IntToHex(int64(targetBit)),//可以有，可以没有
+			IntToHex(int64(nonce)),
+			IntToHex(int64(pow.Block.Height)),
+		},
+		[]byte{},
+	)
+		return  data
+}
+func (proofOfWork *ProofOfWork) Run() ([]byte, int64) {
+	//1.将Block的属性拼接成字节数组
+
+	//2.生成hash
+	//3.判断hash有效性，如果满足条件，跳出循环
+	nonce:=0
+	var  hashInt big.Int//存储我们新生成的hash
+	 var  hashInt big.Int
+	 
+	var  hash [32]byte
+	for {
+		//准备数据
+		dateBytes:=proofOfWork.prepareDate(nonce)
+		//生成Hash
+		hash=sha256.Sum256(dateBytes)
+		fmt.Printf("\r%x",hash)
+		//将Hash存储到hashInt
+		hashInt.SetBytes(hash[:])
+		//判断段hashInt是否小于Block里面的target
+		/*Cmp  compares x and y and returns:
+		      -1  if x<y
+		       0  if x==y
+		       1  if  x>y
+		*/
+		if  proofOfWork.target.Cmp(&hashInt)==1{
+				break
+		}
+
+		nonce=nonce+1
+	}
+	return hash[:],int64(nonce)
+}
+
+//创建新的工作量证明对象
+func NewProofOfWork(block *Block) *ProofOfWork {
+
+	//1.big.Int 对象 1
+	//以8位来做列子，如果期望的难度是2
+	//0000 0001
+	//8-2=6
+	//左移6位 0100 0000  2的6次方，64( target的值 )  如果生成的hash小于64那就满足难度为2的条件
+	//0010 0000 2的5次方  32，
+	//以下操作就确定了难度  target
+	//1。创建一个初始值为1的target
+	target := big.NewInt(1) //相当于 000000.。。。。1
+	//2.左移256-targetBit
+	target = target.Lsh(target, 256-targetBit)
+	return &ProofOfWork{block, target}
+}
+
+  
+  
+  
+
+
+ 
