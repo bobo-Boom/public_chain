@@ -1,0 +1,89 @@
+Block.go
+
+将区块系列化成字节数组
+func  (block *Block)Serialize() []byte{
+	 var  result bytes.Buffer
+	 encoder:=gob.NewEncoder(&result)
+	 err:=encoder.Encode(block)
+	 if  err!=nil {
+		 log.Panic(err)
+	 }
+	 return  result.Bytes()
+}
+
+
+反序列化
+func  DeserializeBlock(blockBytes []byte)*Block{
+
+	var block  Block
+	decoder:=gob.NewDecoder(bytes.NewBuffer(blockBytes))
+	err:=decoder.Decode(&block)
+	if err!=nil{
+		log.Panic(err)
+
+	}
+	return  &block
+}
+
+
+将区块存入、取出数据块操作。
+
+package main
+
+import (
+	"./BLC"
+	"fmt"
+	"github.com/boltdb/bolt"
+	"log"
+)
+func main() {
+
+	block:=BLC.NewBlock("test",1,[]byte{0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0  })
+	fmt.Printf("%d\n\n" ,block.Nonce)
+	fmt.Printf("%x\n",block.Hash)
+	//创建或者打开数据库
+	db, err := bolt.Open("my.db", 0600, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer db.Close()
+
+	//更新数据库
+	err=db.Update(func(tx  * bolt.Tx)error{
+
+		//去表对象
+		b:=tx.Bucket([]byte("blocks"))
+		if  b==nil{
+			b,err=tx.CreateBucket([]byte("blocks"))
+			if err!=nil{
+				log.Panic("Blocks table  create faie" )
+			}
+		}
+		//对象序列化放入数据库
+		err=b.Put([]byte("l"),block.Serialize())
+		if err !=nil{
+			log.Panic(err)
+
+		}
+		return  nil
+	})
+	err=db.View(func(tx  * bolt.Tx)error {
+
+			b:=tx.Bucket([]byte("blocks"))
+			if b!=nil{
+				blockDate:=b.Get([]byte("l"))
+				fmt.Println(blockDate)
+				fmt.Printf("%s\n",blockDate)
+				//反序列化，从数据库取出对象
+				block:=BLC.DeserializeBlock(blockDate)
+				fmt.Printf("%+v\n",block)
+			}
+			return nil
+	})
+
+	if  err!=nil{
+		log.Panic(err)
+
+	}
+
+
