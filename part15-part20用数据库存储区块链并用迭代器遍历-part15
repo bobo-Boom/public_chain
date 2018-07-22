@@ -55,3 +55,71 @@ func CreateBlockchainWithGenesisBlock()*Blockchain{
 }
 
 
+part16 --新增区块存储到数据库
+//增加区块到区块链里面
+func (blc *Blockchain)AddBlockToBlockChain(data  string ){
+
+	//创建新的区块
+
+	err:=blc.DB.Update(func(tx *bolt.Tx)error{
+
+		//1获取表
+		b:=tx.Bucket([]byte(blockTableName))
+		//2 创建新区块
+		if b!=nil {
+
+			//注意：先获取最新区块
+			blockBytes:=b.Get(blc.Tip)
+			//反序列化
+			block:=DeserializeBlock(blockBytes)
+
+
+			//3 将区块序列化并且存储到数据库中
+			newBlock := NewBlock(data,block.Height+1 , block.Hash)
+			err := b.Put(newBlock.Hash, newBlock.Serialize())
+			if err != nil {
+				log.Panic(err)
+			}
+			//4更新数据库里面"l"对应的hash
+			err = b.Put([]byte("l"), newBlock.Hash)
+			if err != nil {
+				log.Panic(err)
+			}
+			//5 更新blockchain的Tip
+			blc.Tip = newBlock.Hash
+		}
+		return  nil
+	})
+	if  err!=nil{
+		log.Panic(err)
+	}
+}
+
+
+part17  --普通遍历方法
+func (blc *Blockchain)PrintChain() {
+
+	blockchainIterator := blc.Iterator()
+
+
+	for {
+		//娶到最新区块
+		block := blockchainIterator.Next()
+
+		fmt.Printf("Height:%d\n",block.Height)
+		fmt.Printf("PrevBlockHash:%x\n",block.PrevBlockHash)
+		fmt.Printf("Date:%s\n",block.Date)
+		fmt.Printf("Timestamp:%s\n",
+			time.Unix(block.Timestamp,0).Format("2006-01-02 03:04:05 PM"))
+		fmt.Printf("Hash:%x\n",block.Hash)
+		fmt.Printf("Nonce:%d\n",block.Nonce)
+
+		fmt.Println()
+
+		var hashInt big.Int
+		hashInt.SetBytes(block.PrevBlockHash)
+		if big.NewInt(0).Cmp(&hashInt) == 0 {
+			break
+		}
+	}
+}
