@@ -1,0 +1,121 @@
+	
+part18 ：  时间格式化  
+  fmt.Printf("Timestamp:%s\n",
+					time.Unix(block.Timestamp,0).Format("2006-01-02 03:04:05 PM"))
+          
+
+part19  通过迭代器遍历区块链
+
+Blockchain.go
+
+
+
+type Blockchain struct{
+	Tip  []byte //最新的区块的Hash
+	DB  *bolt.DB
+}
+
+//迭代器
+type BlockchaiIterator struct{
+	CurrentHash  []byte
+	DB  *bolt.DB
+}
+
+//通过当前区块链初始化并且得到迭代器
+
+迭代器绑定Blockchain
+
+func  (blockchain *Blockchain )Iterator()*BlockchaiIterator{
+
+	return   &BlockchaiIterator{blockchain.Tip,blockchain.DB}
+}
+//通过迭代器获取到当前最新区块并且返回，然后指向前一个区块
+func (blockchaiIterator *BlockchaiIterator) Next()*Block{
+
+	var block *Block
+	err:=blockchaiIterator.DB.View(func(tx *bolt.Tx)error{
+		b:=tx.Bucket([]byte(blockTableName))
+		if  b !=nil{
+			currentBlockBytes:=b.Get(blockchaiIterator.CurrentHash)
+			//获取到当前迭代器里面的currentHash所对应的区块
+			block =DeserializeBlock(currentBlockBytes)
+
+			//更新迭代器里面CurrentHash
+			blockchaiIterator.CurrentHash=block.PrevBlockHash
+		}
+		return   nil
+	})
+	if  err!=nil{
+		log.Panic(err)
+
+	}
+	return  block
+}
+
+
+
+//输出所有区块的信息
+func (blc *Blockchain)PrintChain() {
+
+	blockchainIterator := blc.Iterator()
+
+
+	for {
+		//娶到最新区块
+		block := blockchainIterator.Next()
+
+		fmt.Printf("Height:%d\n",block.Height)
+		fmt.Printf("PrevBlockHash:%x\n",block.PrevBlockHash)
+		fmt.Printf("Date:%s\n",block.Date)
+		fmt.Printf("Timestamp:%s\n",
+			time.Unix(block.Timestamp,0).Format("2006-01-02 03:04:05 PM"))
+		fmt.Printf("Hash:%x\n",block.Hash)
+		fmt.Printf("Nonce:%d\n",block.Nonce)
+
+		fmt.Println()
+    //如果前一个区块的hash==0  跳出
+		var hashInt big.Int
+		hashInt.SetBytes(block.PrevBlockHash)
+		if big.NewInt(0).Cmp(&hashInt) == 0 {
+			break
+		}
+	}
+}
+//增加区块到区块链里面
+func (blc *Blockchain)AddBlockToBlockChain(data  string ){
+
+	//创建新的区块
+
+	err:=blc.DB.Update(func(tx *bolt.Tx)error{
+
+		//1获取表
+		b:=tx.Bucket([]byte(blockTableName))
+		//2 创建新区块
+		if b!=nil {
+
+			//注意：先获取最新区块
+			blockBytes:=b.Get(blc.Tip)
+			//反序列化
+			block:=DeserializeBlock(blockBytes)
+
+
+			//3 将区块序列化并且存储到数据库中
+			newBlock := NewBlock(data,block.Height+1 , block.Hash)
+			err := b.Put(newBlock.Hash, newBlock.Serialize())
+			if err != nil {
+				log.Panic(err)
+			}
+			//4更新数据库里面"l"对应的hash
+			err = b.Put([]byte("l"), newBlock.Hash)
+			if err != nil {
+				log.Panic(err)
+			}
+			//5 更新blockchain的Tip
+			blc.Tip = newBlock.Hash
+		}
+		return  nil
+	})
+	if  err!=nil{
+		log.Panic(err)
+	}
+}
