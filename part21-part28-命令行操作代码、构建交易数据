@@ -1,0 +1,392 @@
+part21-part23- 命令行解析
+
+func main() {
+
+
+	isValidArgs()
+	addBlockCmd := flag.NewFlagSet("addBlock", flag.ExitOnError)
+	printChainCmd := flag.NewFlagSet("printchain", flag.ExitOnError)
+	flagAddBlockData := addBlockCmd.String("data", "11", "添加区块")
+
+	switch  os.Args[1] {
+	case "addBlock":
+		fmt.Println("111111111111111")
+		err := addBlockCmd.Parse(os.Args[2:])
+		fmt.Println("3333333333333")
+		if err != nil {
+			fmt.Println("222222222222")
+			log.Panic(err)
+		}
+	case "printchain":
+		err := printChainCmd.Parse(os.Args[2:])
+		if err != nil {
+			log.Println(err)
+		}
+	default:
+		printUsage()
+		os.Exit(1)
+	}
+	fmt.Println("fdfdfdgsfgf\n")
+	if addBlockCmd.Parsed() {
+		if *flagAddBlockData == "" {
+			printUsage()
+			os.Exit(1)
+		}
+		fmt.Printf("%s\n", *flagAddBlockData)
+
+	}
+	if printChainCmd.Parsed() {
+		fmt.Println("输出所有区块的数据\n")
+	}
+
+}
+
+CLI.go
+package BLC
+
+import (
+	"fmt"
+	"os"
+	"flag"
+	"log"
+)
+
+type CLI struct {
+
+}
+func printUsage() {
+	fmt.Println("Usage:")
+	fmt.Println("\tcreateblockchain  -data  -- 交易数据")
+	fmt.Println("\taddblock -date DATA  --交易信息")
+	fmt.Println("\tprintchain   --输出交易信息")
+
+}
+func isValidArgs() {
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+
+func (cli *CLI) addBlock(data string) {
+	if DBExits()==false{
+		fmt.Println("数据库不存在")
+		os.Exit(1)
+	}
+	//获取blockchain对象
+	blockchain:=BlockchainObject()
+	defer  blockchain.DB.Close()
+	blockchain.AddBlockToBlockChain(data)
+}
+
+func (cli *CLI) printchain() {
+	if DBExits()==false{
+		fmt.Println("数据库不存在")
+		os.Exit(1)
+	}
+	blockchain:=BlockchainObject()
+	defer  blockchain.DB.Close()
+	blockchain.PrintChain()
+}
+func (cli *CLI)creatGenesisBlockchain(data string ){
+	CreateBlockchainWithGenesisBlock(data)
+
+}
+func (cli *CLI) Run() {
+	isValidArgs()
+	addBlockCmd := flag.NewFlagSet("addblock", flag.ExitOnError)
+	printChainCmd := flag.NewFlagSet("printchain", flag.ExitOnError)
+	createBlockChainCmd := flag.NewFlagSet("createblockchain", flag.ExitOnError)
+
+	flagAddBlockData := addBlockCmd.String("data", "11", "添加区块")
+	flagCreatBlockChainWithData:=createBlockChainCmd.String("data","Gensis data ...","创世区块交易数据")
+	switch  os.Args[1] {
+	case "createblockchain":
+
+		err := createBlockChainCmd.Parse(os.Args[2:])
+
+		if err != nil {
+
+			log.Panic(err)
+		}
+	case "addblock":
+
+		err := addBlockCmd.Parse(os.Args[2:])
+
+		if err != nil {
+
+			log.Panic(err)
+		}
+	case "printchain":
+		err := printChainCmd.Parse(os.Args[2:])
+		if err != nil {
+			log.Panic(err)
+
+		}
+	default:
+		printUsage()
+		os.Exit(1)
+	}
+
+	if addBlockCmd.Parsed() {
+		if *flagAddBlockData == "" {
+			printUsage()
+			os.Exit(1)
+		}
+		//	fmt.Printf("%s\n", *flagAddBlockData)
+		cli.addBlock(*flagAddBlockData)
+
+	}
+	if printChainCmd.Parsed() {
+		//fmt.Println("输出所有区块的数据\n")
+		cli.printchain()
+	}
+	if  createBlockChainCmd.Parsed(){
+		if  *flagCreatBlockChainWithData==""{
+			fmt.Println("交易数据不能为空")
+			printUsage()
+			os.Exit(1)
+		}
+			cli.creatGenesisBlockchain("")
+	}
+}
+
+Blockchain.go
+package BLC
+
+import (
+	"github.com/boltdb/bolt"
+	"log"
+	"math/big"
+	"fmt"
+	"time"
+	"os"
+)
+
+//数据库名字
+const dbName = "blockchain.db"
+
+//数据库表的名字
+const blockTableName = "blocks"
+
+type Blockchain struct {
+	Tip []byte //最新的区块的Hash
+	DB  *bolt.DB
+}
+
+//输出所有区块的信息
+func (blc *Blockchain) PrintChain() {
+
+	blockchainIterator := blc.Iterator()
+
+	for {
+		//娶到最新区块
+		block := blockchainIterator.Next()
+
+		fmt.Printf("Height:%d\n", block.Height)
+		fmt.Printf("PrevBlockHash:%x\n", block.PrevBlockHash)
+		fmt.Printf("Date:%s\n", block.Date)
+		fmt.Printf("Timestamp:%s\n",
+			time.Unix(block.Timestamp, 0).Format("2006-01-02 03:04:05 PM"))
+		fmt.Printf("Hash:%x\n", block.Hash)
+		fmt.Printf("Nonce:%d\n", block.Nonce)
+
+		fmt.Println()
+
+		var hashInt big.Int
+		hashInt.SetBytes(block.PrevBlockHash)
+		if big.NewInt(0).Cmp(&hashInt) == 0 {
+			break
+		}
+	}
+}
+
+//增加区块到区块链里面
+func (blc *Blockchain) AddBlockToBlockChain(data string) {
+
+	//创建新的区块
+
+	err := blc.DB.Update(func(tx *bolt.Tx) error {
+
+		//1获取表
+		b := tx.Bucket([]byte(blockTableName))
+		//2 创建新区块
+		if b != nil {
+
+			//注意：先获取最新区块
+			blockBytes := b.Get(blc.Tip)
+			//反序列化
+
+			block := DeserializeBlock(blockBytes)
+
+			//3 将区块序列化并且存储到数据库中
+			newBlock := NewBlock(data, block.Height+1, block.Hash)
+			err := b.Put(newBlock.Hash, newBlock.Serialize())
+			if err != nil {
+				log.Panic(err)
+			}
+
+			//4更新数据库里面"l"对应的hash
+			err = b.Put([]byte("l"), newBlock.Hash)
+			if err != nil {
+				log.Panic(err)
+			}
+			//5 更新blockchain的Tip
+			blc.Tip = newBlock.Hash
+
+		}
+		return nil
+	})
+	if err != nil {
+		log.Panic(err)
+	}
+}
+
+//判断数据库数据库是否存在
+func DBExits() bool {
+	if _, err := os.Stat(dbName); os.IsNotExist(err) {
+		return false
+	}
+	return true
+}
+
+//1.创建带有创世区块的区块链
+func CreateBlockchainWithGenesisBlock(data string)  {
+
+	//判断数据库是否存在
+	 if  DBExits(){
+	 	fmt.Println("创世区块已经存在")
+		os.Exit(1)
+
+	 }
+	fmt.Println("正在创建创世区块.......")
+	//创建或者打开数据库
+	db, err := bolt.Open(dbName, 0600, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = db.Update(func(tx *bolt.Tx) error {
+
+		//创建创建数据库表
+		b, err := tx.CreateBucket([]byte(blockTableName))
+		if err != nil {
+			log.Panic(err)
+
+		}
+
+		if b != nil {
+			//创建创世区块
+			genesisBlock := CreateGensisBlock(data)
+			//将创世区块存储到表中
+			err := b.Put(genesisBlock.Hash, genesisBlock.Serialize())
+			if err != nil {
+				log.Panic(err)
+
+			}
+			//存储最新的区块的hash
+			err = b.Put([]byte("l"), genesisBlock.Hash)
+			if err != nil {
+				log.Panic(err)
+
+			}
+
+		}
+		return nil
+
+	})
+
+}
+func BlockchainObject() *Blockchain{
+	db, err := bolt.Open(dbName, 0600, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	var tip []byte
+	err = db.Update(func(tx *bolt.Tx) error {
+
+		b:=tx.Bucket([]byte(blockTableName))
+		if  b!=nil{
+			//读取最新区块的hash
+			tip=b.Get([]byte("l"))
+		}
+		return  nil
+	})
+	return  &Blockchain{tip,db }
+}
+
+
+
+part28  -在 block总设置Trasasction
+
+
+
+一个区块中应该有对条交易数据
+
+type  Block  struct{
+	//1.区块高度
+	Height int64
+	//2.上一个区块HASH
+	PrevBlockHash []byte
+	//3.交易数据
+	Txs  []*Transaction
+	//4.时间戳
+	Timestamp  int64
+	//5.HASH
+	Hash  []byte
+	//6 Nonce
+	Nonce int64
+}
+
+在拼接区块数据得到[]byte为得到hash  为交易信息数据写一个拼接函数
+
+block.go
+//需要将Txs转换成字节数组返回来
+func (block *Block)HashTransactions()[]byte{
+
+	var  txHashes [][]byte
+	var  txHash  [32]byte
+
+	for _,tx:=range  block.Txs{
+		txHashes=append(txHashes,tx.TxHash)
+	}
+	txHash=sha256.Sum256(bytes.Join(txHashes,[]byte{}))
+
+	return txHash[:]
+}
+
+proofOfWork.go
+//数据拼接，返回字节数组
+func (pow *ProofOfWork) prepareDate(nonce int) []byte {
+	data := bytes.Join(
+		[][]byte{
+			pow.Block.PrevBlockHash,
+			pow.Block.HashTransactions(),   //直接调用函数得到字节切片
+			IntToHex(pow.Block.Timestamp),
+			IntToHex(int64(targetBit)),//可以有，可以没有
+			IntToHex(int64(nonce)),
+			IntToHex(int64(pow.Block.Height)),
+		},
+		[]byte{},
+	)
+		return  data
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
