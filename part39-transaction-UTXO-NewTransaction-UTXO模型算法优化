@@ -1,0 +1,86 @@
+# public_chain
+
+part39   继38中函数func (blockchain *Blockchain) UnUTXOs(address string) []*UTXO 返回的output数组，虽然可以算出余额，
+
+但是如果实现转账功能的话，不仅仅需要知道余额够不够，更是要知道用户的每一个output的位置，从而进行消费转账。
+
+所以 重新封装了一个结构体  从而进行优化。
+
+
+UTXO.go
+
+package BLC
+//这个结构体包括1、output本身
+// 2、对output的定位  hash和index对其进行定位
+type  UTXO struct {
+
+	TxHash []byte
+	Index  int
+	Output  *TXOutput
+
+}
+
+对UnUTXO函数返回值进行优化。
+func (blockchain *Blockchain) UnUTXOs(address string) []*UTXO{  //改动
+
+	//为花费的output集合
+	var unUTXOs []*UTXO  //改动
+	spentTXOutputs := make(map[string][]int)
+	blockIterator := blockchain.Iterator()
+	for {
+		block := blockIterator.Next()
+		fmt.Println(block)
+		fmt.Println()
+
+		for _, tx := range block.Txs {
+
+			//txHash
+
+			//Vins
+			//如果不是创世区块的Transaction
+			if tx.IsCoinbaseTransaction() == false {
+				for _, in := range tx.Vins {
+					//是否能够解锁
+					if in.UnLockWithAddress(address) {
+						key := hex.EncodeToString(in.Txhash)
+						spentTXOutputs[key] = append(spentTXOutputs[key], in.Vout)
+					}
+				}
+			}
+			//Vouts
+			//经过遍历当前Transaction Vouts中的output与 消费过的output集合spentTXOutput[]相比
+			// 判断是Vouts中的对应账户的output的是否消费过
+			for index, out := range tx.Vouts {
+				if out.UnLockScriptPubKeyWithAddress(address) {
+					if spentTXOutputs != nil {
+						if len(spentTXOutputs) != 0 {
+							for txHash, indexArray := range spentTXOutputs {
+
+								for _, i := range indexArray {
+									if i == index && txHash == hex.EncodeToString(tx.TxHash) {
+										continue
+									} else {
+										utxo:=&UTXO{tx.TxHash,index,out}    //改动！！！！
+										unUTXOs = append(unUTXOs, utxo)
+									}
+								}
+
+							}
+						}else{
+							utxo:=&UTXO{tx.TxHash,index,out}   //改动！！！！
+							unUTXOs = append(unUTXOs, utxo)
+						}
+					}
+				}
+			}
+		}
+		var hashInt big.Int
+
+		hashInt.SetBytes(block.PrevBlockHash)
+		if hashInt.Cmp(big.NewInt(0)) == 0 {
+			break
+		}
+	}
+
+	return unUTXOs     //改动
+}
