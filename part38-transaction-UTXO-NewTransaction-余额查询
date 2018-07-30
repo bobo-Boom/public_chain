@@ -1,0 +1,88 @@
+# public_chain
+
+//查找某人（address）所有未花费的输出并且返回
+func (blockchain *Blockchain) UnUTXOs(address string) []*TXOutput {
+
+part38  通过以上函数找出某人所有未花费的output，从而完成查询某人余额的功能。
+
+Blockchain.go
+
+函数思路：
+  1、利用迭代器遍历数据库，依次遍历每个区块的交易信心TXs  
+		for _, tx := range block.Txs {
+  2、在循环中先遍历Txs中的Vins（消费信息）for _, in := range tx.Vins 
+     找出对用用户的消费信息 -->字典存储 spentTXOutputs := make(map[string][]int)
+     
+     字典：  字符串（hash）对应数组（output 的下标）
+        hash：需要消费的Transaction所对应的hash，
+        []数组：Transaction中所对应的一个人所需要消耗的outpu，一个人在一个Transaction中可能有多个output
+         dic :={hash:[0,2],hash:[1,,4]}
+  3、再在循环中遍历 Vouts中的output，与 消费过的output集合spentTXOutput[]相比，判断是Vouts中的对应账户的output的是否消费过
+      找到没有消费过的 放到数组中 unUTXOs = append(unUTXOs, out) 返回 
+  4、此函数返回的是output数组
+
+
+
+//如果一个地址（用户）对应的TXOutput未花费  那个这个Transaction就应该添加到数组中返回
+//查找未花费的输出
+func (blockchain *Blockchain) UnUTXOs(address string) []*TXOutput {
+
+	//为花费的output集合
+	var unUTXOs []*TXOutput
+	spentTXOutputs := make(map[string][]int)
+	blockIterator := blockchain.Iterator()
+	for {
+		block := blockIterator.Next()
+		fmt.Println(block)
+		fmt.Println()
+
+		for _, tx := range block.Txs {
+
+			//txHash
+
+			//Vins
+			//如果不是创世区块的Transaction
+			if tx.IsCoinbaseTransaction() == false {
+				for _, in := range tx.Vins {
+					//是否能够解锁
+					if in.UnLockWithAddress(address) {
+						key := hex.EncodeToString(in.Txhash)
+						spentTXOutputs[key] = append(spentTXOutputs[key], in.Vout)
+					}
+				}
+			}
+			//Vouts
+			//经过遍历当前Transaction Vouts中的output与 消费过的output集合spentTXOutput[]相比
+			// 判断是Vouts中的对应账户的output的是否消费过
+			for index, out := range tx.Vouts {
+				if out.UnLockScriptPubKeyWithAddress(address) {
+					if spentTXOutputs != nil {
+						if len(spentTXOutputs) != 0 {
+							for txHash, indexArray := range spentTXOutputs {
+
+								for _, i := range indexArray {
+									if i == index && txHash == hex.EncodeToString(tx.TxHash) {
+										continue
+									} else {
+										unUTXOs = append(unUTXOs, out)
+									}
+								}
+
+							}
+						}else{
+							unUTXOs = append(unUTXOs, out)
+						}
+					}
+				}
+			}
+		}
+		var hashInt big.Int
+
+		hashInt.SetBytes(block.PrevBlockHash)
+		if hashInt.Cmp(big.NewInt(0)) == 0 {
+			break
+		}
+	}
+
+	return unUTXOs
+}
